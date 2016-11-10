@@ -1858,11 +1858,11 @@ struct uv_loop_s {
   void* data;
   /* Loop reference counting. */
   unsigned int active_handles;
-  void* handle_queue[2];
+  void* handle_queue[2];   //req的发起者, loop的poll handle的状态
   union {
     void* unused;
     unsigned int count;
-  } active_reqs;
+  } active_reqs; //活动req, 意味loop alive
   /* Internal storage for future extensions. */
   void* internal_fields;
   /* Internal flag to signal loop stop. */

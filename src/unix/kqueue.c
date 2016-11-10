@@ -139,6 +139,7 @@ void uv__io_poll(uv_loop_t* loop, int timeout) {
 
   nevents = 0;
 
+  //处理watcher_queue中fd订阅事件, 相应地更新到kqueue
   while (!QUEUE_EMPTY(&loop->watcher_queue)) {
     q = QUEUE_HEAD(&loop->watcher_queue);
     QUEUE_REMOVE(q);

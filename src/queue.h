@@ -42,6 +42,7 @@ typedef void *QUEUE[2];
 #define QUEUE_HEAD(q)                                                         \
   (QUEUE_NEXT(q))
 
+//link q to self
 #define QUEUE_INIT(q)                                                         \
   do {                                                                        \
     QUEUE_NEXT(q) = (q);                                                      \

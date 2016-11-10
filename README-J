@@ -1,0 +1,1 @@
+./gyp_uv.py -d DEBUGMODE -f ninja

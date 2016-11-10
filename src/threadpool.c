@@ -64,8 +64,10 @@ static void worker(void* arg) {
 
   uv_mutex_lock(&mutex);
   for (;;) {
+    
+    //取一个w(job), 或等待w
     /* `mutex` should always be locked at this point. */
-
+    
     /* Keep waiting while either no work is present or only slow I/O
        and we're at the threshold for that. */
     while (QUEUE_EMPTY(&wq) ||
@@ -118,9 +120,11 @@ static void worker(void* arg) {
 
     uv_mutex_unlock(&mutex);
 
+    //执行work函数
     w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
 
+    //work执行完成, 清楚work函数, 插入loop wq队列中, 通知loop以执行done函数
     uv_mutex_lock(&w->loop->wq_mutex);
     w->work = NULL;  /* Signal uv_cancel() that the work req is done
                         executing. */
@@ -138,7 +142,7 @@ static void worker(void* arg) {
   }
 }
 
-
+//把任务插入wq队列,并通知worker线程
 static void post(QUEUE* q, enum uv__work_kind kind) {
   uv_mutex_lock(&mutex);
   if (kind == UV__WORK_SLOW_IO) {
@@ -185,6 +189,8 @@ void uv__threadpool_cleanup(void) {
 }
 
 
+//初始化线程池: 初始线程数4个, 最大线程数128个
+//  初始化wq队列
 static void init_threads(void) {
   unsigned int i;
   const char* val;
@@ -314,14 +320,15 @@ void uv__work_done(uv_async_t* handle) {
   }
 }
 
-
+//内部work函数
 static void uv__queue_work(struct uv__work* w) {
   uv_work_t* req = container_of(w, uv_work_t, work_req);
 
-  req->work_cb(req);
+  req->work_cb(req); //用户work函数
 }
 
-
+//内部work完成函数
+//  可以支持空用户完成函数
 static void uv__queue_done(struct uv__work* w, int err) {
   uv_work_t* req;
 
@@ -334,7 +341,8 @@ static void uv__queue_done(struct uv__work* w, int err) {
   req->after_work_cb(req, err);
 }
 
-
+//api
+//提交一个任务(req)到线程池
 int uv_queue_work(uv_loop_t* loop,
                   uv_work_t* req,
                   uv_work_cb work_cb,
@@ -343,8 +351,8 @@ int uv_queue_work(uv_loop_t* loop,
     return UV_EINVAL;
 
   uv__req_init(loop, req, UV_WORK);
-  req->work_cb = work_cb;
-  req->after_work_cb = after_work_cb;
+  req->work_cb = work_cb;  //用户work函数
+  req->after_work_cb = after_work_cb; //用户work完成函数
   uv__work_submit(loop,
                   &req->work_req,
                   UV__WORK_CPU,
