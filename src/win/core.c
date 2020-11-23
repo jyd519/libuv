@@ -137,12 +137,12 @@ int uv_loop_init(uv_loop_t* loop) {
   loop->time = 0;
   uv_update_time(loop);
 
-  QUEUE_INIT(&loop->wq);
+  QUEUE_INIT(&loop->wq);  // 完成函数队列
   QUEUE_INIT(&loop->handle_queue);
   loop->active_reqs.count = 0;
   loop->active_handles = 0;
 
-  loop->pending_reqs_tail = NULL;
+  loop->pending_reqs_tail = NULL;  // 存放完成事件对应到req
 
   loop->endgame_handles = NULL;
 
@@ -265,7 +265,7 @@ int uv_backend_timeout(const uv_loop_t* loop) {
   if (!uv__has_active_handles(loop) && !uv__has_active_reqs(loop))
     return 0;
 
-  if (loop->pending_reqs_tail)
+  if (loop->pending_reqs_tail)  // 有完成事件需要处理，不阻塞
     return 0;
 
   if (loop->endgame_handles)
@@ -356,7 +356,7 @@ static void uv__poll_wine(uv_loop_t* loop, int timeout) {
   }
 }
 
-
+// 等待I/O完成事件
 static void uv__poll(uv_loop_t* loop, int timeout) {
   BOOL success;
   uv_req_t* req;
@@ -422,7 +422,7 @@ static void uv__poll(uv_loop_t* loop, int timeout) {
               continue;
             gotwakeup = TRUE;
           }
-          uv_insert_pending_req(loop, req);
+          uv_insert_pending_req(loop, req);  // 插入pending req队列
         }
       }
 
@@ -466,7 +466,7 @@ int uv_loop_alive(const uv_loop_t* loop) {
     return uv__loop_alive(loop);
 }
 
-
+//  event loop（win）
 int uv_run(uv_loop_t *loop, uv_run_mode mode) {
   int timeout;
   int r;
@@ -480,7 +480,7 @@ int uv_run(uv_loop_t *loop, uv_run_mode mode) {
     uv_update_time(loop);
     uv__run_timers(loop);
 
-    ran_pending = uv_process_reqs(loop);
+    ran_pending = uv_process_reqs(loop);  // (win) 处理上次迭代得到的完成请求
     uv__run_idle(loop);
     uv__run_prepare(loop);
 

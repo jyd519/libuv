@@ -1125,6 +1125,7 @@ struct uv_work_s {
   UV_REQ_FIELDS
   uv_work_cb work_cb;
   uv_after_work_cb after_work_cb;
+  // uv__work  work_req
   UV_WORK_PRIVATE_FIELDS
 };
 
@@ -1852,21 +1853,21 @@ union uv_any_req {
 };
 #undef XX
 
-
+// event loop 核心数据结构
 struct uv_loop_s {
   /* User data - use this for whatever. */
   void* data;
   /* Loop reference counting. */
-  unsigned int active_handles;
+  unsigned int active_handles;  // uv__handle_start 增加计数： uv__active_handle_add,uv__active_handle_rm 增减计数；
   void* handle_queue[2];   //req的发起者, loop的poll handle的状态
   union {
     void* unused;
     unsigned int count;
-  } active_reqs; //活动req, 意味loop alive
+  } active_reqs;           //活动req, 意味loop alive
   /* Internal storage for future extensions. */
   void* internal_fields;
   /* Internal flag to signal loop stop. */
-  unsigned int stop_flag;
+  unsigned int stop_flag;  // uv_stop
   void* reserved[4];
   UV_LOOP_PRIVATE_FIELDS
 };

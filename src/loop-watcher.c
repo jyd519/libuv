@@ -21,7 +21,13 @@
 
 #include "uv.h"
 #include "uv-common.h"
-
+/*
+ *
+ * 四个特殊watcher对象的管理: 
+ *    1. handled对象
+ *    2. 定义函数：init, start, stop, run, close
+ *
+ * */
 #define UV_LOOP_WATCHER_DEFINE(name, type)                                    \
   int uv_##name##_init(uv_loop_t* loop, uv_##name##_t* handle) {              \
     uv__handle_init(loop, (uv_handle_t*)handle, UV_##type);                   \

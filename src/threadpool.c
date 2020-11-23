@@ -42,6 +42,7 @@ static QUEUE wq;
 static QUEUE run_slow_work_message;
 static QUEUE slow_io_pending_wq;
 
+// 避免工作线程全被slow work占用
 static unsigned int slow_work_thread_threshold(void) {
   return (nthreads + 1) / 2;
 }
@@ -65,27 +66,33 @@ static void worker(void* arg) {
   uv_mutex_lock(&mutex);
   for (;;) {
     
-    //取一个w(job), 或等待w
     /* `mutex` should always be locked at this point. */
     
     /* Keep waiting while either no work is present or only slow I/O
        and we're at the threshold for that. */
+    /*
+     * 如果wq空，说明没有work可执行
+     *   如果wq上的当前任务是run_slow_work_message， 且
+     *       run_slow_work_message是最后一个任务，且 正在运行slow works太多了：
+     *           等待下一个任务消息
+     * */
     while (QUEUE_EMPTY(&wq) ||
            (QUEUE_HEAD(&wq) == &run_slow_work_message &&
             QUEUE_NEXT(&run_slow_work_message) == &wq &&
             slow_io_work_running >= slow_work_thread_threshold())) {
       idle_threads += 1;
-      uv_cond_wait(&cond, &mutex);
+      uv_cond_wait(&cond, &mutex);  // 没有work可做，或slow work已经安排满了
       idle_threads -= 1;
     }
 
-    q = QUEUE_HEAD(&wq);
-    if (q == &exit_message) {
-      uv_cond_signal(&cond);
+    q = QUEUE_HEAD(&wq);     // 注意: 不删除exit_message消息
+    if (q == &exit_message) {  // 技巧：用地址识别特殊任务 =》 结束worker线程
+      uv_cond_signal(&cond);  // 唤醒其它线程
       uv_mutex_unlock(&mutex);
       break;
     }
 
+    // 从队列中取走一个work，并把q的队列项初始化
     QUEUE_REMOVE(q);
     QUEUE_INIT(q);  /* Signal uv_cancel() that the work req is executing. */
 
@@ -124,14 +131,15 @@ static void worker(void* arg) {
     w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
 
-    //work执行完成, 清楚work函数, 插入loop wq队列中, 通知loop以执行done函数
+    //work执行完成, 清除work函数指针, 把work插入loop wq队列中, 通知loop以执行done函数
     uv_mutex_lock(&w->loop->wq_mutex);
     w->work = NULL;  /* Signal uv_cancel() that the work req is done
                         executing. */
-    QUEUE_INSERT_TAIL(&w->loop->wq, &w->wq);
-    uv_async_send(&w->loop->wq_async);
+    QUEUE_INSERT_TAIL(&w->loop->wq, &w->wq);   // 加入完成函数队列
+    uv_async_send(&w->loop->wq_async);  // 通知 loop线程 work执行完成
     uv_mutex_unlock(&w->loop->wq_mutex);
 
+    // 准备取下一个待执行work
     /* Lock `mutex` since that is expected at the start of the next
      * iteration. */
     uv_mutex_lock(&mutex);
@@ -227,6 +235,7 @@ static void init_threads(void) {
   if (uv_sem_init(&sem, 0))
     abort();
 
+  // 创建xianc 
   for (i = 0; i < nthreads; i++)
     if (uv_thread_create(threads + i, worker, &sem))
       abort();
@@ -264,7 +273,7 @@ void uv__work_submit(uv_loop_t* loop,
                      enum uv__work_kind kind,
                      void (*work)(struct uv__work* w),
                      void (*done)(struct uv__work* w, int status)) {
-  uv_once(&once, init_once);
+  uv_once(&once, init_once);  // 确保线程池准备好
   w->loop = loop;
   w->work = work;
   w->done = done;
@@ -298,6 +307,7 @@ static int uv__work_cancel(uv_loop_t* loop, uv_req_t* req, struct uv__work* w) {
 }
 
 
+// work执行完成，执行done回调函数
 void uv__work_done(uv_async_t* handle) {
   struct uv__work* w;
   uv_loop_t* loop;
@@ -310,6 +320,7 @@ void uv__work_done(uv_async_t* handle) {
   QUEUE_MOVE(&loop->wq, &wq);
   uv_mutex_unlock(&loop->wq_mutex);
 
+  // 执行目前为止 完成队列中的回调函数
   while (!QUEUE_EMPTY(&wq)) {
     q = QUEUE_HEAD(&wq);
     QUEUE_REMOVE(q);
@@ -333,7 +344,7 @@ static void uv__queue_done(struct uv__work* w, int err) {
   uv_work_t* req;
 
   req = container_of(w, uv_work_t, work_req);
-  uv__req_unregister(req->loop, req);
+  uv__req_unregister(req->loop, req); // unregister req
 
   if (req->after_work_cb == NULL)
     return;
@@ -350,7 +361,7 @@ int uv_queue_work(uv_loop_t* loop,
   if (work_cb == NULL)
     return UV_EINVAL;
 
-  uv__req_init(loop, req, UV_WORK);
+  uv__req_init(loop, req, UV_WORK);  // 增加loop的active_reqs计数
   req->work_cb = work_cb;  //用户work函数
   req->after_work_cb = after_work_cb; //用户work完成函数
   uv__work_submit(loop,

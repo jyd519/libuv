@@ -47,7 +47,7 @@ int uv_loop_init(uv_loop_t* loop) {
     goto fail_metrics_mutex_init;
 
   heap_init((struct heap*) &loop->timer_heap);
-  QUEUE_INIT(&loop->wq);
+  QUEUE_INIT(&loop->wq);  // 完成函数队列
   QUEUE_INIT(&loop->idle_handles);
   QUEUE_INIT(&loop->async_handles);
   QUEUE_INIT(&loop->check_handles);

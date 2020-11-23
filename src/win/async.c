@@ -75,6 +75,7 @@ void uv_process_async_wakeup_req(uv_loop_t* loop,
 
   assert(req->type == UV_WAKEUP);
 
+  // 只调用一次，调用完后重新插入队列
   QUEUE_MOVE(&loop->async_handles, &queue);
   while (!QUEUE_EMPTY(&queue)) {
     q = QUEUE_HEAD(&queue);

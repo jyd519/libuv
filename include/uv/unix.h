@@ -91,9 +91,10 @@ typedef void (*uv__io_cb)(struct uv_loop_s* loop,
                           unsigned int events);
 typedef struct uv__io_s uv__io_t;
 
+// 基于fd的io对象
 struct uv__io_s {
-  uv__io_cb cb;
-  void* pending_queue[2];
+  uv__io_cb cb;  // 事件发生后的回调函数
+  void* pending_queue[2];   // loop的pending_queue 链表
   void* watcher_queue[2];
   unsigned int pevents; /* Pending event mask i.e. mask at next tick. */
   unsigned int events;  /* Current event mask. */

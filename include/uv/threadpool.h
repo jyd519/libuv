@@ -31,7 +31,7 @@ struct uv__work {
   void (*work)(struct uv__work *w);
   void (*done)(struct uv__work *w, int status);
   struct uv_loop_s* loop;
-  void* wq[2];
+  void* wq[2];  // 链接到 loop的完成队列
 };
 
 #endif /* UV_THREADPOOL_H_ */

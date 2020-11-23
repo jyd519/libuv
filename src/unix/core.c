@@ -98,7 +98,7 @@ uint64_t uv_hrtime(void) {
   return uv__hrtime(UV_CLOCK_PRECISE);
 }
 
-
+// 为handle对象提供一个统一的关闭函数
 void uv_close(uv_handle_t* handle, uv_close_cb close_cb) {
   assert(!uv__is_closing(handle));
 
@@ -334,7 +334,7 @@ int uv_backend_timeout(const uv_loop_t* loop) {
   if (!QUEUE_EMPTY(&loop->idle_handles))
     return 0;
 
-  if (!QUEUE_EMPTY(&loop->pending_queue))
+  if (!QUEUE_EMPTY(&loop->pending_queue))  // 有等待处理的IO回调
     return 0;
 
   if (loop->closing_handles)
@@ -361,22 +361,42 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
   int r;
   int ran_pending;
 
-  r = uv__loop_alive(loop);
+  r = uv__loop_alive(loop);  // 是否还有工作要做: handles, reqs, closing_handles
   if (!r)
-    uv__update_time(loop);
+    uv__update_time(loop);  // 缓存now，减少与时间相关点系统调用
 
-  while (r != 0 && loop->stop_flag == 0) {
-    uv__update_time(loop);
-    uv__run_timers(loop);
+  while (r != 0 && loop->stop_flag == 0) {  // 有工作 且 loop未停止， 否则跳过本loop
+    uv__update_time(loop);     // 更新时间
+    uv__run_timers(loop);  // 运行到点的timer回调
+
+   /* Pending callbacks are called. 
+
+     All I/O callbacks are called right after polling for I/O, for the most part. 
+     There are cases, however, in which calling such a callback is deferred for the next loop iteration. 
+     If the previous iteration deferred any I/O callback it will be run at this point. 
+     */
     ran_pending = uv__run_pending(loop);
+
+    // Idle handle callbacks are called. Despite the unfortunate name, idle handles are run on every loop iteration, if they are active
     uv__run_idle(loop);
+
+    // Prepare handle callbacks are called. Prepare handles get their callbacks called right before the loop will block for I/O.
     uv__run_prepare(loop);
 
+    /*
+     Poll timeout is calculated. Before blocking for I/O the loop calculates for how long it should block. 
+     These are the rules when calculating the timeout:
+      If the loop was run with the UV_RUN_NOWAIT flag, the timeout is 0.
+      If the loop is going to be stopped (uv_stop() was called), the timeout is 0.
+      If there are no active handles or requests, the timeout is 0.
+      If there are any idle handles active, the timeout is 0.
+      If there are any handles pending to be closed, the timeout is 0.
+      If none of the above cases matches, the timeout of the closest timer is taken, or if there are no active timers, infinity.* */
     timeout = 0;
     if ((mode == UV_RUN_ONCE && !ran_pending) || mode == UV_RUN_DEFAULT)
       timeout = uv_backend_timeout(loop);
 
-    uv__io_poll(loop, timeout);
+    uv__io_poll(loop, timeout);  // blocks for I/O 查询事件
 
     /* Run one final update on the provider_idle_time in case uv__io_poll
      * returned because the timeout expired, but no events were received. This
@@ -385,8 +405,15 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
      */
     uv__metrics_update_idle_time(loop);
 
+    // Check handle callbacks are called. 
+    // Check handles get their callbacks called right after the loop has blocked for I/O. 
+    // Check handles are essentially the counterpart of prepare handles.
     uv__run_check(loop);
+
+
+    // Close callbacks are called. If a handle was closed by calling uv_close() it will get the close callback called.
     uv__run_closing_handles(loop);
+
 
     if (mode == UV_RUN_ONCE) {
       /* UV_RUN_ONCE implies forward progress: at least one callback must have
